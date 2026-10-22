@@ -1,4 +1,4 @@
-# MayeCreate Schema
+# MayeCreate Design Schema
 
 Outputs one connected schema.org graph (JSON-LD) on every page. All the pieces reference each other by `@id`, so search engines see one organization, one website, and pages that belong to them.
 
