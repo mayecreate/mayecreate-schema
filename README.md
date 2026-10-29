@@ -1,4 +1,4 @@
-# MayeCreate Design Schema
+# MayeCreate Schema
 
 Outputs one connected schema.org graph (JSON-LD) on every page. All the pieces reference each other by `@id`, so search engines see one organization, one website, and pages that belong to them.
 
@@ -69,7 +69,7 @@ Key pages are found by the setting, or by slug if blank: `about`, `about-us`, `c
 
 The link comes from the theme's `alternate_link` field (a URL, ACF link, or media file). A link to an uploaded file or a document (.pdf, .docx, .xlsx...) counts as a download; anything else is an outside link. Other common field names (`resource_file`, `file`, `external_url`, `link`...) are checked as a fallback, or set exact names on the Post Types tab. Fields inside an ACF group (saved as `<group>_alternate_link`) are found too.
 
-**Events** read the theme's ACF fields: `event_start_date`, `event_end_date`, `event_start_time`, `event_end_time`, `event_location`, `registration_link`, `registration_title`, `registration_type`. Times use the site timezone. A location that's a URL or says online/virtual/Zoom/webinar becomes a `VirtualLocation`; a blank location falls back to the organization's address. An event with no start date stays a plain WebPage. Items of any post type that isn't on the Post Types tab become events automatically when `event_start_date` is filled in; add the post type on the tab as *Standard page* to turn that off. `registration_type`: "link" points the registration offer to `registration_link`; "form" points it to the event page itself, where the form is embedded. Different field names on a site: use the `mcs_event_fields` filter.
+**Events** read the theme's ACF fields: `event_start_date`, `event_end_date`, `event_start_time`, `event_end_time`, `event_location`, `event_address`, `registration_link`, `registration_title`, `registration_type`. Times use the site timezone. Locations: **`event_address`** decides. A link (starts with http) → online event (`VirtualLocation`); anything else → used as the address. `event_location`, if filled in, becomes the place's name. If `event_address` is empty (older events/sites), `event_location` is read instead: a URL or "online/Zoom/webinar" → online; a real address (street number, ZIP or "City, ST" ending) → address; the business name → the organization's address; any other name → name only, no address. Both empty → the organization's address. An event with no start date stays a plain WebPage. Items of any post type that isn't on the Post Types tab become events automatically when `event_start_date` is filled in; add the post type on the tab as *Standard page* to turn that off. `registration_type`: "link" points the registration offer to `registration_link`; "form" points it to the event page itself, where the form is embedded. Different field names on a site: use the `mcs_event_fields` filter.
 
 **Per-page override:** the Schema box on each page/post has a *Page type* dropdown (Standard, About, Contact, Collection, Service, Article, Downloadable document, Staff profile, Team) and a *No schema on this page* switch.
 
@@ -85,6 +85,12 @@ All IDs are `<url>#<fragment>`, home URL always with a trailing slash:
 A staff member with a profile page uses `<profile-url>#person` both on the team page and on their own page, so the two connect.
 
 ---
+
+## Troubleshooting a page's type
+
+- The page's **Schema box** shows *Detected as* with the reason (updates after saving).
+- **View Source** and find `MayeCreate Schema` — the comment above the schema says the type and why, e.g. `page: about (About page in Settings → Schema)`.
+- Order of precedence: the page's Schema box → Key Pages in Settings → Schema → a post type's main page → pages under Services/Resources → standard page.
 
 ## For developers
 
