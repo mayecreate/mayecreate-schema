@@ -18,11 +18,14 @@ function mcs_output() {
 	}
 
 	$graph = mcs_build_graph();
+	$ctx   = isset( $GLOBALS['mcs_ctx'] ) ? $GLOBALS['mcs_ctx'] : array();
+	$note  = ! empty( $ctx['kind'] ) ? ' | page: ' . $ctx['kind'] . ( ! empty( $ctx['reason'] ) ? ' (' . $ctx['reason'] . ')' : '' ) : '';
 	if ( ! $graph ) {
+		echo "\n<!-- MayeCreate Schema " . esc_html( MCS_VERSION . $note ) . " | no schema on this page -->\n";
 		return;
 	}
 
-	$flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+	$flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
 	if ( mcs_opt( 'pretty', false ) ) {
 		$flags |= JSON_PRETTY_PRINT;
 	}
@@ -36,12 +39,13 @@ function mcs_output() {
 	);
 
 	if ( ! $json ) {
+		echo "\n<!-- MayeCreate Schema " . esc_html( MCS_VERSION ) . " | could not encode schema: " . esc_html( json_last_error_msg() ) . " -->\n";
 		return;
 	}
 
 	// Never let content close the script tag early.
 	$json = str_replace( '</', '<\/', $json );
 
-	echo "\n<!-- MayeCreate Schema " . esc_html( MCS_VERSION ) . " -->\n";
+	echo "\n<!-- MayeCreate Schema " . esc_html( MCS_VERSION . $note ) . " -->\n";
 	echo '<script type="application/ld+json" class="mayecreate-schema">' . "\n" . $json . "\n</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 }

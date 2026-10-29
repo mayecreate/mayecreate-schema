@@ -258,27 +258,10 @@ function mcs_context() {
 	$ctx['url']     = is_front_page() ? home_url( '/' ) : get_permalink( $id );
 	$ctx['name']    = mcs_text( get_the_title( $id ) );
 
-	$overrides = array(
-		'webpage'       => 'webpage',
-		'about'         => 'about',
-		'contact'       => 'contact',
-		'collection'    => 'collection',
-		'service'       => 'service',
-		'article'       => 'article',
-		'document'      => 'document',
-		'staff_profile' => 'staff_profile',
-		'team'          => 'team',
-	);
-	$override = mcs_meta( $id, 'page_type', 'auto' );
-
-	if ( is_front_page() ) {
-		$ctx['kind'] = 'home';
+	list( $ctx['kind'], $ctx['reason'] ) = mcs_classify_post( $id, is_front_page() );
+	if ( 'home' === $ctx['kind'] ) {
 		$ctx['home'] = true;
 		$ctx['name'] = mcs_site_name();
-	} elseif ( isset( $overrides[ $override ] ) ) {
-		$ctx['kind'] = $overrides[ $override ];
-	} else {
-		$ctx['kind'] = mcs_auto_kind( $id );
 	}
 
 	if ( 'collection' === $ctx['kind'] ) {
@@ -290,12 +273,52 @@ function mcs_context() {
 }
 
 /**
- * Automatic detection for a singular post/page.
+ * Page types a designer can choose in the Schema box.
+ */
+function mcs_page_type_choices() {
+	return array(
+		'webpage'       => 'Standard page',
+		'about'         => 'About page',
+		'contact'       => 'Contact page',
+		'collection'    => 'Collection',
+		'service'       => 'Service',
+		'article'       => 'Article',
+		'document'      => 'Downloadable document',
+		'staff_profile' => 'Staff profile',
+		'team'          => 'Team / staff page',
+	);
+}
+
+/**
+ * Classify a single post/page. Returns [ kind, reason ].
+ */
+function mcs_classify_post( $id, $is_front = null ) {
+	if ( null === $is_front ) {
+		$is_front = 'page' === get_option( 'show_on_front' ) && (int) get_option( 'page_on_front' ) === (int) $id;
+	}
+	if ( $is_front ) {
+		return array( 'home', 'front page' );
+	}
+	$override = mcs_meta( $id, 'page_type', 'auto' );
+	if ( isset( mcs_page_type_choices()[ $override ] ) ) {
+		return array( $override, 'chosen in this page\'s Schema box' );
+	}
+	$kind = mcs_auto_kind( $id );
+	return array( $kind, $GLOBALS['mcs_last_reason'] ?? 'automatic' );
+}
+
+/**
+ * Automatic detection for a singular post/page. Sets $GLOBALS['mcs_last_reason'].
  */
 function mcs_auto_kind( $id ) {
+	$GLOBALS['mcs_last_reason'] = 'automatic';
+	$why = function ( $reason ) {
+		$GLOBALS['mcs_last_reason'] = $reason;
+	};
 	$post_type = get_post_type( $id );
 
 	if ( 'post' === $post_type ) {
+		$why( 'blog post' );
 		return 'post';
 	}
 
@@ -305,35 +328,51 @@ function mcs_auto_kind( $id ) {
 		if ( mcs_is_resource_type( $post_type ) ) {
 			// Each resource decides for itself: uploaded file, outside link, or content on the page.
 			$target = mcs_resource_target( $id );
+			$why( 'resource: ' . ( 'file' === $target['type'] ? 'downloadable file' : ( 'link' === $target['type'] ? 'outside link' : 'content on the page' ) ) );
 			return 'file' === $target['type'] ? 'document' : ( 'link' === $target['type'] ? 'webpage' : 'article' );
 		}
 		if ( isset( $map[ $post_type ] ) && 'webpage' !== $map[ $post_type ]['item_type'] ) {
 			$type = $map[ $post_type ]['item_type'];
+			$why( 'Post Types tab' );
 			return in_array( $type, array( 'article', 'document', 'event' ), true ) ? $type : 'webpage';
 		}
 		// Anything with an event start date filled in is an event.
 		$fields = mcs_event_fields();
 		if ( ! isset( $map[ $post_type ] ) && ! empty( $fields['start_date'] ) && function_exists( 'get_field' ) && get_field( $fields['start_date'], $id, false ) ) {
+			$why( 'event start date is filled in' );
 			return 'event';
 		}
+		$why( '"' . $post_type . '" item' );
 		return 'webpage';
 	}
 
-	// A post type's main page lists its items.
-	if ( mcs_listing_post_type( $id ) ) {
-		return 'collection';
-	}
-
+	// Key Pages chosen in Settings → Schema come first.
 	if ( $id === mcs_key_page( 'about' ) ) {
+		$why( mcs_key_page_reason( 'about' ) );
 		return 'about';
 	}
 	if ( $id === mcs_key_page( 'contact' ) ) {
+		$why( mcs_key_page_reason( 'contact' ) );
 		return 'contact';
 	}
 	if ( $id === mcs_key_page( 'team' ) ) {
+		$why( mcs_key_page_reason( 'team' ) );
 		return 'team';
 	}
-	if ( $id === mcs_key_page( 'services' ) || $id === mcs_key_page( 'resources' ) ) {
+
+	// A post type's main page lists its items.
+	$listing = mcs_listing_post_type( $id );
+	if ( $listing ) {
+		$why( 'main page for the "' . $listing . '" post type' );
+		return 'collection';
+	}
+
+	if ( $id === mcs_key_page( 'services' ) ) {
+		$why( mcs_key_page_reason( 'services' ) );
+		return 'collection';
+	}
+	if ( $id === mcs_key_page( 'resources' ) ) {
+		$why( mcs_key_page_reason( 'resources' ) );
 		return 'collection';
 	}
 
@@ -344,14 +383,25 @@ function mcs_auto_kind( $id ) {
 
 		if ( $services && in_array( $services, $ancestors, true ) ) {
 			// A page under Services that has its own children is a sub-section landing page.
+			$why( 'under the Services page' );
 			return mcs_child_pages( $id ) ? 'collection' : 'service';
 		}
 		if ( $resources && in_array( $resources, $ancestors, true ) ) {
+			$why( 'under the Resources page' );
 			return mcs_child_pages( $id ) ? 'collection' : 'article';
 		}
 	}
 
+	$why( 'no special type found' );
 	return 'webpage';
+}
+
+/**
+ * Why a page counts as a key page: the setting, or its slug.
+ */
+function mcs_key_page_reason( $which ) {
+	$label = ucfirst( $which ) . ' page';
+	return mcs_post_id( mcs_opt( $which . '_page', 0 ) ) ? $label . ' in Settings → Schema' : $label . ', found by its URL';
 }
 
 /**
@@ -372,7 +422,8 @@ function mcs_child_pages( $id ) {
  * ======================================================================== */
 
 function mcs_build_graph() {
-	$ctx = mcs_context();
+	$ctx             = mcs_context();
+	$GLOBALS['mcs_ctx'] = $ctx;
 
 	if ( 'excluded' === $ctx['kind'] ) {
 		return array();
@@ -1120,6 +1171,7 @@ function mcs_event_fields() {
 			'start_time'         => 'event_start_time',
 			'end_time'           => 'event_end_time',
 			'location'           => 'event_location',
+			'address'            => 'event_address',
 			'registration_link'  => 'registration_link',
 			'registration_title' => 'registration_title',
 			'registration_type'  => 'registration_type',
@@ -1198,14 +1250,68 @@ function mcs_event_location( $value ) {
 		return array( array( '@type' => 'VirtualLocation', 'name' => $name ), 'online' );
 	}
 
+	// A real address: use it as typed.
+	if ( mcs_looks_like_address( $text ) ) {
+		return array(
+			array(
+				'@type'   => 'Place',
+				'name'    => $name,
+				'address' => $text,
+			),
+			'offline',
+		);
+	}
+
+	// The business name: the business's own address.
+	if ( mcs_refers_to_business( $text ) ) {
+		return array(
+			array(
+				'@type'   => 'Place',
+				'name'    => $name,
+				'address' => mcs_address(),
+			),
+			'offline',
+		);
+	}
+
+	// Any other place name: keep the name, don't guess an address.
 	return array(
 		array(
-			'@type'   => 'Place',
-			'name'    => $name,
-			'address' => $text,
+			'@type' => 'Place',
+			'name'  => $name,
 		),
 		'offline',
 	);
+}
+
+/**
+ * Does this text look like a street address? A street number, a ZIP code, or a "City, ST" ending.
+ */
+function mcs_looks_like_address( $text ) {
+	$states = 'AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY';
+	$is     = preg_match( '/\b\d{1,6}\s+[A-Za-z]/', $text )                 // 123 Main St
+		|| preg_match( '/\b\d{5}(-\d{4})?\b/', $text )                   // 65240
+		|| preg_match( '/[A-Za-z],?\s+(' . $states . ')\.?\s*$/', $text ); // Camdenton, MO
+	return (bool) apply_filters( 'mcs_looks_like_address', $is, $text );
+}
+
+/**
+ * Does this location mean the business's own place? True when it contains the business name or legal name.
+ */
+function mcs_refers_to_business( $text ) {
+	if ( null === mcs_address() ) {
+		return false;
+	}
+	$lower   = strtolower( trim( $text ) );
+	$phrases = array( mcs_site_name(), mcs_text( (string) mcs_opt( 'legal_name' ) ) );
+	$is = false;
+	foreach ( array_filter( array_map( 'trim', $phrases ) ) as $phrase ) {
+		if ( false !== strpos( $lower, strtolower( mcs_text( $phrase ) ) ) ) {
+			$is = true;
+			break;
+		}
+	}
+	return (bool) apply_filters( 'mcs_refers_to_business', $is, $text );
 }
 
 function mcs_node_event( $ctx, $desc, $image ) {
@@ -1226,7 +1332,23 @@ function mcs_node_event( $ctx, $desc, $image ) {
 		$end = ''; // Same day, no end time: leave it out rather than guess.
 	}
 
-	list( $location, $mode ) = mcs_event_location( ! empty( $fields['location'] ) ? get_field( $fields['location'], $id ) : '' );
+	$place_name = ! empty( $fields['location'] ) ? get_field( $fields['location'], $id ) : '';
+	$address    = ! empty( $fields['address'] ) ? mcs_text( (string) get_field( $fields['address'], $id, false ) ) : '';
+
+	if ( '' !== $address ) {
+		// The Address field decides: a link means online, anything else is the address.
+		$name = is_string( $place_name ) ? mcs_text( $place_name ) : '';
+		if ( preg_match( '#^https?://#i', $address ) ) {
+			$location = array( '@type' => 'VirtualLocation', 'url' => esc_url_raw( $address ), 'name' => $name );
+			$mode     = 'online';
+		} else {
+			$location = array( '@type' => 'Place', 'name' => $name, 'address' => $address );
+			$mode     = 'offline';
+		}
+	} else {
+		// No Address field (older events and sites): read the Location field.
+		list( $location, $mode ) = mcs_event_location( $place_name );
+	}
 	if ( ! $location ) {
 		// Default to the organization's address.
 		$address = mcs_address();

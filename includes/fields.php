@@ -559,6 +559,12 @@ function mcs_register_fields() {
 			'location'              => $locations,
 			'fields'                => array(
 				array(
+					'key'     => 'field_mcs_detected',
+					'label'   => 'Detected as',
+					'type'    => 'message',
+					'message' => '',
+				),
+				array(
 					'key'           => 'field_mcs_page_type',
 					'name'          => 'mcs_page_type',
 					'label'         => 'Page type',
@@ -639,6 +645,7 @@ function mcs_register_fields() {
 function mcs_type_guide_html() {
 	$rows = array(
 		array( 'B2B company, manufacturer, distributor, supplier', 'Organization' ),
+		array( 'Heavy civil, commercial or specialty contractor (excavation, paving, concrete) with a Google Business Profile', 'General contractor / builder' ),
 		array( 'Heavy civil or commercial contractor with no Google Business Profile', 'Organization' ),
 		array( 'Builder or general contractor with a Google Business Profile', 'General contractor / builder' ),
 		array( 'Electrician, plumber, HVAC, roofer, painter', 'That trade' ),
@@ -662,3 +669,43 @@ function mcs_type_guide_html() {
 	$html .= '<p>Something else with a Google Business Profile? Look it up in the <a href="https://schema.org/LocalBusiness" target="_blank" rel="noopener">list of local business types</a> (see "More specific Types"; each links to more), then choose <strong>Other</strong> and type the name in. Avoid "ProfessionalService": schema.org has retired it.</p>';
 	return $html;
 }
+
+/**
+ * Show what the plugin decided for the page being edited (updates after saving).
+ */
+add_filter(
+	'acf/load_field/key=field_mcs_detected',
+	function ( $field ) {
+		$post_id = 0;
+		if ( isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$post_id = (int) $_GET['post']; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		} elseif ( ! empty( $GLOBALS['post']->ID ) ) {
+			$post_id = (int) $GLOBALS['post']->ID;
+		}
+		if ( ! $post_id || ! function_exists( 'mcs_classify_post' ) || 'auto-draft' === get_post_status( $post_id ) ) {
+			$field['message'] = '<em>Shown after the page is saved.</em>';
+			return $field;
+		}
+		if ( mcs_meta( $post_id, 'exclude', false ) ) {
+			$field['message'] = '<strong>No schema</strong> (switched off below)';
+			return $field;
+		}
+		list( $kind, $reason ) = mcs_classify_post( $post_id );
+		$ctx  = array( 'kind' => $kind, 'post_id' => $post_id, 'url' => get_permalink( $post_id ), 'name' => '', 'reason' => $reason );
+		$ctx  = apply_filters( 'mcs_context', $ctx );
+		$kind = $ctx['kind'];
+		$labels = array_merge(
+			array(
+				'home'    => 'Homepage',
+				'post'    => 'Blog post',
+				'event'   => 'Event',
+				'product' => 'Product',
+				'recipe'  => 'Recipe',
+			),
+			mcs_page_type_choices()
+		);
+		$label = isset( $labels[ $kind ] ) ? $labels[ $kind ] : ucfirst( $kind );
+		$field['message'] = '<strong>' . esc_html( $label ) . '</strong><br><span style="color:#646970">' . esc_html( $ctx['reason'] ) . '. Updates when you save.</span>';
+		return $field;
+	}
+);
